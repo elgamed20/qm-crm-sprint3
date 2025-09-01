@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>QM Vendor/Client CRM — Sprint 4</title>
+  <title>QM Vendor/Client CRM — Sprint 5</title>
 
-  <!-- Tailwind CSS -->
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <!-- React UMD + Babel -->
@@ -38,10 +38,11 @@
 <body>
   <div id="root"></div>
 
+  <!-- === [APP] START === -->
   <script type="text/babel">
-    const { useState, useMemo } = React;
+    const { useState, useMemo, useEffect } = React;
 
-    // ---------- Constants & Utils ----------
+    // ---------- Utils ----------
     const currencies = [
       { code: "KWD", label: "Kuwaiti Dinar" },
       { code: "EGP", label: "Egyptian Pound" },
@@ -66,6 +67,19 @@
       try { return new Intl.NumberFormat(undefined,{style:"currency",currency:code,maximumFractionDigits:3}).format(Number(n)); }
       catch { return Number(n).toFixed(2)+" "+code; }
     };
+    const todayISO = () => new Date().toISOString().slice(0,10);
+
+    // ---------- Local storage helpers ----------
+    const STORAGE_KEY = "qm-crm-sprint5";
+    const loadState = () => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch { return null; }
+    };
+    const saveState = (state) => {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+    };
 
     // ---------- Seed ----------
     const seedClients = [
@@ -84,7 +98,7 @@
     ];
     const seedReceipts = [];
 
-    // ---------- PDF helper ----------
+    // ---------- PDF helpers ----------
     const exportClientPDF = (client, contracts, dues, receipts, logo=null) => {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({orientation:"p", unit:"pt", format:"a4"});
@@ -124,7 +138,6 @@
         body: receipts.map(r => [r.receivedAt, r.method, `${r.amount} ${r.currency}`, r.reference||"-", r.createdBy||"-"])
       });
 
-      // Totals
       const totalDue = dues.reduce((s,d)=> s + (Number(d.amount)-Number(d.allocated||0)), 0);
       const totalPaid = receipts.reduce((s,r)=> s + Number(r.amount), 0);
       const bal = totalDue - totalPaid;
@@ -325,7 +338,7 @@
       const [currency, setCurrency] = useState(initial.currency || (clients[0]? defaultCurrency(clients[0].country):"KWD"));
       const [method, setMethod] = useState(initial.method || payMethods[0]);
       const [reference, setReference] = useState(initial.reference || "");
-      const [receivedAt, setReceivedAt] = useState(initial.receivedAt || new Date().toISOString().slice(0,10));
+      const [receivedAt, setReceivedAt] = useState(initial.receivedAt || todayISO());
       const [note, setNote] = useState(initial.note || "");
       const [attachmentUrl, setAttachmentUrl] = useState(initial.attachmentUrl || "");
       const [appliedToDueItemId, setAppliedToDueItemId] = useState(initial.appliedToDueItemId || "");
@@ -405,11 +418,14 @@
         setComment("");
       };
       const saveFollow = ()=> updateClient({ nextFollowUp: follow });
+      const overdue = c.nextFollowUp && new Date(c.nextFollowUp) < new Date();
       return (
         <div className="grid gap-3">
           <Field label="إضافة تعليق"><textarea className="inp" rows="3" value={comment} onChange={e=>setComment(e.target.value)} /></Field>
           <div className="flex justify-end"><button className="btn" onClick={addComment} disabled={!comment.trim()}>إضافة تعليق</button></div>
-          <Field label="المتابعة القادمة"><input type="datetime-local" className="inp" value={follow} onChange={e=>setFollow(e.target.value)} /></Field>
+          <Field label="المتابعة القادمة">
+            <input type="datetime-local" className={"inp "+(overdue?"border-rose-400":"")} value={follow} onChange={e=>setFollow(e.target.value)} />
+          </Field>
           <div className="flex justify-end"><button className="btn" onClick={saveFollow}>حفظ المتابعة</button></div>
           <div className="grid gap-2">{(c.timeline||[]).map(t=>(<div key={t.id} className="border rounded p-2 text-sm"><b>{new Date(t.at).toLocaleString()}</b><br/>{t.text}</div>))}</div>
         </div>
@@ -419,7 +435,7 @@
     const ClientView = ({ c, contracts, dueItems, receipts, onClose, updateClient })=>{
       const [edit,setEdit]=useState(false);
       const [tab,setTab]=useState(c.status==="current"?"contracts":"timeline");
-      const onPatch = (patch)=> updateClient(patch); // parent passes a wrapper
+      const onPatch = (patch)=> updateClient(patch);
 
       return (
         <Modal title={"تفاصيل العميل — "+c.name} onClose={onClose}>
@@ -515,6 +531,10 @@
                 <h3 className="text-lg font-semibold">{c.name}</h3>
                 <span className="badge gray">{c.country}</span>
                 <span className={"badge "+(c.status==="current"?"green":c.status==="prospect"?"amber":"gray")}>{c.status==="current"?"حالي":"محتمل"}</span>
+                {/* NEW: service badge for prospects */}
+                {c.status==="prospect" && Array.isArray(c.services) && c.services.length>0 && (
+                  <span className="badge">{c.services[0]}</span>
+                )}
               </div>
               <div className="text-sm text-slate-600">{c.email} · {c.phone}</div>
             </div>
@@ -720,15 +740,24 @@
     // ---------- App ----------
     function App(){
       const [tab, setTab] = useState("clients");
-      const [clients, setClients] = useState(seedClients);
-      const [contracts, setContracts] = useState(seedContracts);
-      const [dueItems, setDueItems] = useState(seedDue);
-      const [receipts, setReceipts] = useState(seedReceipts);
-      const [clientTab, setClientTab] = useState("current");
       const [logoDataUrl, setLogoDataUrl] = useState(null);
       const [search, setSearch] = useState("");
+      const [clientTab, setClientTab] = useState("current");
       const currentUser = "Yasser";
 
+      // state load (localStorage or seed)
+      const loaded = loadState();
+      const [clients, setClients] = useState(loaded?.clients || seedClients);
+      const [contracts, setContracts] = useState(loaded?.contracts || seedContracts);
+      const [dueItems, setDueItems] = useState(loaded?.dueItems || seedDue);
+      const [receipts, setReceipts] = useState(loaded?.receipts || seedReceipts);
+
+      // persist
+      useEffect(()=>{
+        saveState({clients,contracts,dueItems,receipts});
+      },[clients,contracts,dueItems,receipts]);
+
+      // compute stats
       const statsByClient = useMemo(()=>{
         const out={};
         for (const c of clients) out[c.id] = { due:0, paid:0, balance:0, currency:defaultCurrency(c.country) };
@@ -745,14 +774,24 @@
         return list.filter(c => [c.name,c.email,c.phone,c.country].join(" ").toLowerCase().includes(t));
       }, [clients, clientTab, search]);
 
+      // CRUD helpers
       const addClient = (obj)=> setClients(p=>[...p, {id:uid(), ...obj}]);
-      const updateClient = (id, patch)=> setClients(p=>p.map(c=> c.id===id? {...c, ...patch}:c));
+      const updateClient = (idOrPatch, patch)=> {
+        // allow call as (id, patch) or from ClientView (patch only)
+        if (typeof idOrPatch === "string") {
+          setClients(p=>p.map(c=> c.id===idOrPatch? {...c, ...patch}:c));
+        } else {
+          // called as updateClient(patch) inside ClientView with closure
+          const idx = clients.findIndex(c=>c.id===patch.id);
+          if (idx>=0) setClients(p=>p.map(c=> c.id===patch.id? {...c, ...idOrPatch}:c));
+        }
+      };
 
       const addContract = (ct)=>{
         const n = { id:uid(), createdAt: new Date().toISOString(), ...ct };
         setContracts(p=>[n, ...p]);
         // convert prospect to current automatically
-        updateClient(ct.clientId, { status:"current" });
+        setClients(p=>p.map(c=> c.id===ct.clientId ? {...c, status:"current"} : c));
       };
       const updateContract = (id, patch)=> setContracts(p=>p.map(c=> c.id===id? {...c, ...patch}:c));
 
@@ -767,11 +806,35 @@
 
       const sortedContracts = useMemo(()=> [...contracts].sort((a,b)=> (b.createdAt||"") > (a.createdAt||"") ? 1 : -1 ), [contracts]);
 
+      // export/import
+      const exportJSON = ()=>{
+        const data = {clients,contracts,dueItems,receipts};
+        const blob = new Blob([JSON.stringify(data,null,2)], {type:"application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = "qm-crm-backup.json"; a.click();
+        URL.revokeObjectURL(url);
+      };
+      const importJSON = (file)=>{
+        const reader = new FileReader();
+        reader.onload = ()=> {
+          try {
+            const data = JSON.parse(reader.result);
+            if (!data || typeof data !== "object") throw new Error("Bad JSON");
+            setClients(Array.isArray(data.clients)? data.clients : []);
+            setContracts(Array.isArray(data.contracts)? data.contracts : []);
+            setDueItems(Array.isArray(data.dueItems)? data.dueItems : []);
+            setReceipts(Array.isArray(data.receipts)? data.receipts : []);
+            alert("تم الاستيراد بنجاح");
+          } catch (e) { alert("ملف غير صالح"); }
+        };
+        reader.readAsText(file);
+      };
+
       return (
         <div className="min-h-screen">
           <header className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-slate-200">
             <div className="mx-auto max-w-7xl px-4 py-3 flex items-center gap-3">
-              <div className="font-semibold text-slate-900 text-lg">QM Vendor/Client CRM — Sprint 4</div>
+              <div className="font-semibold text-slate-900 text-lg">QM Vendor/Client CRM — Sprint 5</div>
               <nav className="flex items-center gap-1 ml-2">
                 {["clients","contracts","dues","receipts","reports"].map(id => (
                   <button key={id} onClick={()=>setTab(id)} className={"px-3 py-1.5 rounded-full text-sm border " + (tab===id? "bg-slate-900 text-white border-slate-900":"bg-white text-slate-700 border-slate-300")}>
@@ -782,7 +845,14 @@
               <div className="ml-auto flex items-center gap-2">
                 <input type="file" accept="image/*" className="hidden" id="logoUp" onChange={(e)=>{const f=e.target.files?.[0]; if(!f) return; const reader=new FileReader(); reader.onload=()=>setLogoDataUrl(reader.result); reader.readAsDataURL(f);}}/>
                 <label className="btn" htmlFor="logoUp">Upload Logo</label>
+
                 <input className="inp w-64" placeholder="...بحث في العملاء" value={search} onChange={e=>setSearch(e.target.value)} />
+
+                <button className="btn" onClick={exportJSON}>Export JSON</button>
+                <label className="btn">
+                  Import JSON
+                  <input type="file" accept="application/json" className="hidden" onChange={(e)=>{const f=e.target.files?.[0]; if(f) importJSON(f);}}/>
+                </label>
               </div>
             </div>
           </header>
@@ -795,7 +865,7 @@
                 setClients={setClients}
                 statsByClient={statsByClient}
                 addClient={addClient}
-                updateClient={(id,patch)=>updateClient(id,patch)}
+                updateClient={(id,patch)=>setClients(p=>p.map(c=> c.id===id? {...c, ...patch}:c))}
                 clientTab={clientTab}
                 setClientTab={setClientTab}
                 contracts={sortedContracts}
@@ -805,7 +875,13 @@
                 receipts={receipts}
                 exportClient={(clientId)=>{
                   const c = clients.find(x=>x.id===clientId);
-                  exportClientPDF(c, sortedContracts.filter(ct=>ct.clientId===clientId), dueItems.filter(d=>d.clientId===clientId), receipts.filter(r=>r.clientId===clientId), logoDataUrl);
+                  exportClientPDF(
+                    c,
+                    sortedContracts.filter(ct=>ct.clientId===clientId),
+                    dueItems.filter(d=>d.clientId===clientId),
+                    receipts.filter(r=>r.clientId===clientId),
+                    logoDataUrl
+                  );
                 }}
               />
             )}
@@ -857,5 +933,6 @@
     const root = ReactDOM.createRoot(document.getElementById("root"));
     root.render(<App />);
   </script>
+  <!-- === [APP] END === -->
 </body>
 </html>
