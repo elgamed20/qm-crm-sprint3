@@ -509,13 +509,17 @@
       const [showAddContract, setShowAddContract]=useState(false);
       return (
         <div className="card">
-          <div className="flex items-start gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold">{c.name}</h3>
-                <span className="badge gray">{c.country}</span>
-                <span className={"badge "+(c.status==="current"?"green":c.status==="prospect"?"amber":"gray")}>{c.status==="current"?"حالي":"محتمل"}</span>
-              </div>
+          <div className="flex items-center gap-2">
+  <h3 className="text-lg font-semibold">{c.name}</h3>
+  <span className="badge gray">{c.country}</span>
+  <span className={"badge "+(c.status==="current"?"green":"amber")}>
+    {c.status==="current"?"حالي":"محتمل"}
+  </span>
+  {/* NEW: show service label for prospects */}
+  {c.status==="prospect" && Array.isArray(c.services) && c.services.length>0 && (
+    <span className="badge">{c.services[0]}</span>
+  )}
+</div>
               <div className="text-sm text-slate-600">{c.email} · {c.phone}</div>
             </div>
             {c.status==="current" && (
