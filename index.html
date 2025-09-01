@@ -3,36 +3,45 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>QM Vendor/Client CRM — Sprint 3</title>
+  <title>QM Vendor/Client CRM — Sprint 4</title>
+
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- PDF -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+
   <style>
-    body { background: #f8fafc; color:#0f172a; }
-    .btn { display:inline-flex; align-items:center; justify-content:center; border-radius:0.5rem; border:1px solid #cbd5e1; background:#fff; padding:0.375rem 0.75rem; font-size:0.875rem; }
-    .btn:hover { background:#f8fafc; }
-    .btn-primary { display:inline-flex; align-items:center; justify-content:center; border-radius:0.75rem; background:#0f172a; padding:0.5rem 1rem; font-size:0.875rem; color:#fff; }
-    .btn-primary:hover { background:#000; }
-    .btn-xs { display:inline-flex; align-items:center; justify-content:center; border-radius:0.375rem; border:1px solid #cbd5e1; background:#fff; padding:0.25rem 0.5rem; font-size:0.75rem; }
-    .inp { width:100%; border:1px solid #cbd5e1; border-radius:0.5rem; padding:0.375rem 0.75rem; font-size:0.875rem; }
-    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; padding:1rem; z-index:50;}
-    .card { border:1px solid #e2e8f0; background:#fff; border-radius:0.75rem; padding:1rem; box-shadow:0 1px 2px rgba(0,0,0,.04); }
-    .badge { display:inline-flex; align-items:center; border:1px solid #e2e8f0; border-radius:9999px; font-size:12px; padding:0.125rem 0.5rem; }
-    .badge.gray { background:#f8fafc; color:#334155; }
-    .badge.amber { background:#fffbeb; color:#92400e; border-color:#f59e0b; }
-    .badge.green { background:#ecfdf5; color:#065f46; border-color:#34d399; }
-    .link { color:#0f172a; text-decoration:underline; text-underline-offset:2px; }
-    .disabled { opacity:.5; pointer-events:none; }
+    body { background:#f8fafc; color:#0f172a; }
+    .btn{display:inline-flex;align-items:center;justify-content:center;border-radius:.5rem;border:1px solid #cbd5e1;background:#fff;padding:.375rem .75rem;font-size:.875rem}
+    .btn:hover{background:#f8fafc}
+    .btn-primary{display:inline-flex;align-items:center;justify-content:center;border-radius:.75rem;background:#0f172a;padding:.5rem 1rem;font-size:.875rem;color:#fff}
+    .btn-primary:hover{background:#000}
+    .btn-xs{display:inline-flex;align-items:center;justify-content:center;border-radius:.375rem;border:1px solid #cbd5e1;background:#fff;padding:.25rem .5rem;font-size:.75rem}
+    .inp{width:100%;border:1px solid #cbd5e1;border-radius:.5rem;padding:.375rem .75rem;font-size:.875rem}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:1rem;z-index:50}
+    .card{border:1px solid #e2e8f0;background:#fff;border-radius:.75rem;padding:1rem;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    .badge{display:inline-flex;align-items:center;border:1px solid #e2e8f0;border-radius:9999px;font-size:12px;padding:.125rem .5rem}
+    .badge.gray{background:#f8fafc;color:#334155}
+    .badge.amber{background:#fffbeb;color:#92400e;border-color:#f59e0b}
+    .badge.green{background:#ecfdf5;color:#065f46;border-color:#34d399}
+    .tabs button{border-radius:9999px;padding:.5rem 1rem;border:1px solid #cbd5e1}
+    .tabs .active{background:#0f172a;color:#fff;border-color:#0f172a}
   </style>
 </head>
 <body>
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useMemo } = React;
+    const { useState, useMemo, useEffect } = React;
 
-    // ====== Helpers ======
+    // --------- Constants / Utils ---------
     const currencies = [
       { code: "KWD", label: "Kuwaiti Dinar" },
       { code: "EGP", label: "Egyptian Pound" },
@@ -45,375 +54,203 @@
       { value:"milestone", label:"دفعات (Milestones)" },
       { value:"mixed", label:"مختلط" },
     ];
-    const payMethods = ["تحويل بنكي","كاش","شيك","بوابة دفع","أخرى"];
     const dueCategories = ["دفع","تسويق","خدمات","أخرى"];
-    const roles = ["Manager","Collections","Sales"];
+    const payMethods = ["تحويل بنكي","كاش","شيك","بوابة دفع","أخرى"];
+    const stages = ["New","Contacted","Negotiation","Won","Lost"];
+    const importanceLabels = ["High","Medium","Low"];
+    const currencyByCountry = {"الكويت":"KWD","مصر":"EGP","الإمارات":"AED"};
+    const defaultCurrency = c => currencyByCountry[c] || "USD";
     const uid = () => Math.random().toString(36).slice(2,10);
     const fmt = (n, code="KWD") => {
       if (Number.isNaN(Number(n))) return "-";
       try { return new Intl.NumberFormat(undefined,{style:"currency",currency:code,maximumFractionDigits:3}).format(Number(n)); }
       catch { return Number(n).toFixed(2)+" "+code; }
     };
-    const todayStr = () => new Date().toISOString().slice(0,10);
-    const daysBetween = (a,b) => Math.floor((new Date(a)-new Date(b))/(1000*60*60*24));
 
-    // ====== Seed (Demo) ======
+    // --------- Seed Data ---------
     const seedClients = [
-      { id: uid(), name: "Al Noor Clinic", country: "الكويت", phone: "22093334", email: "info@alnoor.kw", status: "active" },
-      { id: uid(), name: "Delta Foods", country: "مصر", phone: "+2010000000", email: "ops@delta.eg", status: "prospect" },
+      { id: uid(), name: "Al Noor Clinic", country: "الكويت", phone: "22093334", email: "info@alnoor.kw", status: "current" },
+      { id: uid(), name: "Delta Foods", country: "مصر", phone: "+2010000000", email: "ops@delta.eg",
+        status: "prospect", salesOwner:"Omar", importance:"High", services:["Digital Marketing"], stage:"Negotiation",
+        nextFollowUp:"", timeline:[] },
     ];
     const seedContracts = [
-      { id: uid(), clientId: seedClients[0].id, type:"monthly", currency:"KWD", monthlyAmount:600, startDate:"2025-09-01", autoMonthly:true, billingDay:1, dueDay:5 },
+      { id: uid(), clientId: seedClients[0].id, service:"Marketing Retainer", type:"monthly", currency:"KWD",
+        monthlyAmount:600, startDate:"2025-09-01", autoMonthly:true, billingDay:1, dueDay:5, createdAt:"2025-09-01" },
     ];
     const seedDue = [
-      { id: uid(), clientId: seedClients[0].id, contractId: seedContracts[0].id, title:"اشتراك سبتمبر 2025", dueDate:"2025-09-05", amount:600, currency:"KWD", category:"دفع", allocated:0, status:"open" },
+      { id: uid(), clientId: seedClients[0].id, contractId: null, title:"اشتراك سبتمبر 2025",
+        dueDate:"2025-09-05", amount:600, currency:"KWD", category:"دفع", allocated:0, status:"open" },
     ];
     const seedReceipts = [];
 
-    // ====== CSV ======
-    function downloadCSV(filename, rows){
-      const esc = (v) => ('"'+String(v).replace(/"/g,'""')+'"');
-      const content = rows.map(r => r.map(esc).join(',')).join('\n');
-      const blob = new Blob([content],{type:'text/csv;charset=utf-8;'});
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      a.click();
-    }
+    // --------- PDF Helpers ---------
+    const exportClientPDF = (client, contracts, dues, receipts, logo=null) => {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({orientation:"p", unit:"pt", format:"a4"});
+      if (logo) doc.addImage(logo, "PNG", 40, 28, 90, 40);
+      doc.setFontSize(16); doc.text("Client Statement", 140, 50);
+      doc.setFontSize(11); doc.text(`Client: ${client.name}`, 40, 90);
 
-    function App(){
-      const [tab, setTab] = useState("clients");
-      const [user, setUser] = useState("Yasser");
-      const [role, setRole] = useState("Manager");
-      const [clients, setClients] = useState(seedClients);
-      const [contracts, setContracts] = useState(seedContracts);
-      const [dueItems, setDueItems] = useState(seedDue);
-      const [receipts, setReceipts] = useState(seedReceipts);
-      const [q, setQ] = useState("");
+      // Contracts
+      let y = 110;
+      doc.text("Contracts", 40, y);
+      doc.autoTable({
+        startY: y+10,
+        head: [["Service","Type","Currency","Total/Monthly"]],
+        body: contracts.map(ct => [
+          ct.service || "-",
+          ct.type,
+          ct.currency,
+          ct.type==="monthly" ? ct.monthlyAmount : (ct.total || (ct.milestones||[]).reduce((s,m)=>s+Number(m.amount||0),0) || 0)
+        ])
+      });
 
-      // Roles
-      const can = (action) => {
-        if (role==="Manager") return true;
-        if (role==="Collections") return ["add_receipt","add_due","allocate_due","export","reports"].includes(action);
-        if (role==="Sales") return ["add_client","edit_client","edit_contract","reports"].includes(action);
-        return false;
-      };
+      // Dues
+      y = doc.lastAutoTable.finalY + 20;
+      doc.text("Dues", 40, y);
+      doc.autoTable({
+        startY: y+10,
+        head: [["Title","Due Date","Amount","Status"]],
+        body: dues.map(d => [d.title, d.dueDate, `${d.amount} ${d.currency}`, d.status])
+      });
 
-      // Stats
-      const statsByClient = useMemo(()=>{
-        const out = {};
-        for (const c of clients) out[c.id] = { due:0, paid:0, balance:0, currency:null };
-        for (const d of dueItems) { const o = out[d.clientId]; if(!o) continue; o.due += Number(d.amount) - Number(d.allocated||0); o.currency = o.currency || d.currency; }
-        for (const r of receipts) { const o = out[r.clientId]; if(!o) continue; o.paid += Number(r.amount); o.currency = o.currency || r.currency; }
-        for (const id in out) out[id].balance = out[id].due - out[id].paid;
-        return out;
-      }, [clients, dueItems, receipts]);
+      // Receipts
+      y = doc.lastAutoTable.finalY + 20;
+      doc.text("Receipts", 40, y);
+      doc.autoTable({
+        startY: y+10,
+        head: [["Date","Method","Amount","Reference","By"]],
+        body: receipts.map(r => [r.receivedAt, r.method, `${r.amount} ${r.currency}`, r.reference||"-", r.createdBy||"-"])
+      });
 
-      const filteredClients = useMemo(()=>{
-        const t = q.trim().toLowerCase();
-        if (!t) return clients;
-        return clients.filter(c => [c.name,c.email,c.phone,c.country].join(' ').toLowerCase().includes(t));
-      }, [clients,q]);
+      // Totals
+      const totalDue = dues.reduce((s,d)=> s + (Number(d.amount)-Number(d.allocated||0)), 0);
+      const totalPaid = receipts.reduce((s,r)=> s + Number(r.amount), 0);
+      const bal = totalDue - totalPaid;
+      y = doc.lastAutoTable.finalY + 25;
+      doc.setFontSize(12);
+      doc.text(`Total Due: ${totalDue}`, 40, y);
+      doc.text(`Total Paid: ${totalPaid}`, 180, y);
+      doc.text(`Balance: ${bal}`, 320, y);
 
-      // Auto-generate current month dues from contracts (monthly)
-      const autoGenerateThisMonth = () => {
-        const now = new Date();
-        const y = now.getFullYear();
-        const m = now.getMonth();
-        const monthName = now.toLocaleDateString('ar', { month:'long', year:'numeric' });
-        let created = 0;
-        const existsKey = (clientId, title) => dueItems.some(d=> d.clientId===clientId && d.title===title && d.dueDate.slice(0,7) === `${y}-${String(m+1).padStart(2,'0')}`);
-        const newDues = [];
-        for (const ct of contracts){
-          if (ct.type!=="monthly" || !ct.autoMonthly) continue;
-          const dueDay = Number(ct.dueDay||5);
-          const title = `اشتراك ${monthName}`;
-          if (existsKey(ct.clientId, title)) continue;
-          const dueDate = new Date(y, m, dueDay);
-          newDues.push({ id: uid(), clientId: ct.clientId, contractId: ct.id, title, dueDate: dueDate.toISOString().slice(0,10), amount: Number(ct.monthlyAmount||0), currency: ct.currency, category:"دفع", allocated:0, status:"open" });
-          created++;
-        }
-        if (newDues.length) setDueItems(p=>[...newDues, ...p]);
-        alert(created? `تم توليد ${created} مستحق(ات) لهذا الشهر` : "لا توجد مستحقات جديدة للتوليد");
-      };
+      doc.save(`${client.name}-statement.pdf`);
+    };
 
-      return (
-        <div className="min-h-screen">
-          <header className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-slate-200">
-            <div className="mx-auto max-w-7xl px-4 py-3 flex items-center gap-3">
-              <div className="font-semibold text-slate-900 text-lg">QM Vendor/Client CRM — Sprint 3</div>
-              <nav className="flex items-center gap-1 ml-2">
-                {["clients","contracts","dues","receipts","reports"].map(id => (
-                  <button key={id} onClick={()=>setTab(id)} className={"px-3 py-1.5 rounded-full text-sm border " + (tab===id? "bg-slate-900 text-white border-slate-900":"bg-white text-slate-700 border-slate-300")}>
-                    {({clients:"العملاء",contracts:"العقود",dues:"المستحقات",receipts:"التحصيل",reports:"التقارير"})[id]}
-                  </button>
-                ))}
-              </nav>
-              <div className="ml-auto flex items-center gap-2">
-                <select className="inp w-32" value={role} onChange={e=>setRole(e.target.value)}>
-                  {roles.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-                <select className="inp w-28" value={user} onChange={e=>setUser(e.target.value)}>
-                  <option>Yasser</option><option>Omar</option><option>Mai</option>
-                </select>
-                <input className="inp w-64" placeholder="بحث في العملاء..." value={q} onChange={e=>setQ(e.target.value)} />
-              </div>
-            </div>
-          </header>
-
-          <main className="mx-auto max-w-7xl px-4 pb-24">
-            {tab==="clients" && (
-              <ClientsPanel
-                clients={filteredClients}
-                statsByClient={statsByClient}
-                addClient={c=>setClients(p=>[...p, c])}
-                dueItems={dueItems}
-                addDue={d=>setDueItems(p=>[d, ...p])}
-                addReceipt={r=>setReceipts(p=>[r, ...p])}
-                user={user}
-                contracts={contracts}
-                can={can}
-              />
-            )}
-            {tab==="contracts" && (
-              <ContractsPanel clients={clients} contracts={contracts}
-                addContract={ct=>setContracts(p=>[ct, ...p])}
-                updateContract={(id, patch)=> setContracts(p=>p.map(c=> c.id===id? {...c, ...patch}: c))}
-                can={can}
-              />
-            )}
-            {tab==="dues" && (
-              <DuesPanel
-                clients={clients}
-                dueItems={dueItems}
-                addDueItem={d=>setDueItems(p=>[d, ...p])}
-                markAllocated={(id, amt)=>setDueItems(p=>p.map(d=> d.id===id ? {...d, allocated: Math.min(Number(d.amount), Number(d.allocated||0)+Number(amt)), status: (Number(d.allocated||0)+Number(amt))>=Number(d.amount)?'paid':'partial'} : d ))}
-                autoGenerateThisMonth={autoGenerateThisMonth}
-                can={can}
-              />
-            )}
-            {tab==="receipts" && (
-              <ReceiptsPanel
-                clients={clients}
-                receipts={receipts}
-                addReceipt={(val)=>{
-                  if(val.appliedToDueItemId){
-                    setDueItems(p=>p.map(d=> d.id===val.appliedToDueItemId ? {...d, allocated: Math.min(Number(d.amount), Number(d.allocated||0)+Number(val.amount)), status: (Number(d.allocated||0)+Number(val.amount))>=Number(d.amount)?'paid':'partial'} : d));
-                  }
-                  setReceipts(p=>[{...val, id: uid(), createdBy: user}, ...p]);
-                }}
-                dueItems={dueItems}
-                user={user}
-                can={can}
-              />
-            )}
-            {tab==="reports" && (
-              <ReportsPanel
-                receipts={receipts} dueItems={dueItems} clients={clients}
-                onExportCSV={(name, rows)=>downloadCSV(name, rows)}
-                can={can}
-              />
-            )}
-          </main>
-        </div>
-      );
-    }
-
-    // ---------- Shared UI ----------
-    function Field({label,children}){
-      return <label className="grid gap-1 text-sm"><span className="text-slate-700 font-medium">{label}</span>{children}</label>;
-    }
-    function Stat({ label, value, subtle, highlight, good }){
+    // --------- Small UI helpers ---------
+    const Field = ({label,children}) => (
+      <label className="grid gap-1 text-sm">
+        <span className="text-slate-700 font-medium">{label}</span>
+        {children}
+      </label>
+    );
+    const Stat = ({label,value,subtle,highlight,good})=>{
       const cls = highlight? "bg-rose-50 border-rose-200": good? "bg-emerald-50 border-emerald-200": subtle? "bg-slate-50 border-slate-200":"bg-white border-slate-200";
-      return <div className={"rounded-lg border p-3 text-center "+cls}><div className="text-xs text-slate-600">{label}</div><div className="text-base font-semibold">{value}</div></div>;
-    }
-    function Th({children}){ return <th className="px-3 py-2 text-xs font-semibold text-slate-600">{children}</th>; }
-    function Td({children}){ return <td className="px-3 py-2">{children}</td>; }
-    function Modal({ title, onClose, children }){
-      return (
-        <div className="modal-backdrop" onMouseDown={onClose}>
-          <div className="w-full max-w-2xl rounded-2xl bg-white border border-slate-200" onMouseDown={(e)=>e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-              <div className="font-semibold">{title}</div>
-              <button className="text-slate-500 hover:text-slate-900" onClick={onClose}>✕</button>
-            </div>
-            <div className="p-4">{children}</div>
+      return <div className={"rounded-lg border p-3 text-center "+cls}>
+        <div className="text-xs text-slate-600">{label}</div>
+        <div className="text-base font-semibold">{value}</div>
+      </div>;
+    };
+    const Th = ({children}) => <th className="px-3 py-2 text-xs font-semibold text-slate-600">{children}</th>;
+    const Td = ({children}) => <td className="px-3 py-2">{children}</td>;
+    const RowView = ({label,value}) => (
+      <div className="flex items-center justify-between border-b py-2">
+        <div className="text-sm text-slate-600">{label}</div>
+        <div className="font-medium">{value || "—"}</div>
+      </div>
+    );
+    const Modal = ({title,onClose,children}) => (
+      <div className="modal" onMouseDown={onClose}>
+        <div className="w-full max-w-2xl rounded-2xl bg-white border border-slate-200" onMouseDown={(e)=>e.stopPropagation()}>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+            <div className="font-semibold">{title}</div>
+            <button className="text-slate-500 hover:text-slate-900" onClick={onClose}>✕</button>
           </div>
+          <div className="p-4">{children}</div>
         </div>
-      );
-    }
+      </div>
+    );
+    const ListTable = ({head,rows}) => (
+      <div className="overflow-x-auto bg-white border rounded-xl">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50"><tr>{head.map((h,i)=><Th key={i}>{h}</Th>)}</tr></thead>
+        <tbody>{rows.map((r,i)=>(<tr key={i} className="border-t">{r.map((c,j)=><Td key={j}>{c}</Td>)}</tr>))}</tbody>
+        </table>
+      </div>
+    );
 
-    // ---------- Clients ----------
-    function ClientsPanel({ clients, statsByClient, addClient, dueItems, addDue, addReceipt, user, contracts, can }){
-      const [openAdd, setOpenAdd] = useState(false);
-      const addDisabled = !can("add_client");
-      return (
-        <section className="pt-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xl font-semibold">العملاء</h2>
-            <button className={"btn-primary "+(addDisabled?"disabled":"")} onClick={()=>!addDisabled && setOpenAdd(true)}>إضافة عميل</button>
-          </div>
-          <div className="grid gap-3">
-            {clients.map(c => (
-              <ClientCard key={c.id} c={c} stats={statsByClient[c.id]||{due:0,paid:0,balance:0,currency:"KWD"}} dueItems={dueItems.filter(d=>d.clientId===c.id)} contracts={contracts.filter(ct=>ct.clientId===c.id)} addDue={addDue} addReceipt={addReceipt} user={user} can={can} />
-            ))}
-          </div>
-
-          {openAdd && (
-            <Modal title="إضافة عميل" onClose={()=>setOpenAdd(false)}>
-              <ClientForm onSubmit={(val)=>{ addClient({ id: uid(), ...val, status:"active" }); setOpenAdd(false); }} />
-            </Modal>
-          )}
-        </section>
-      );
-    }
-
-    function ClientCard({ c, stats, dueItems, contracts, addDue, addReceipt, user, can }){
-      const [showDue, setShowDue] = useState(false);
-      const [showReceipt, setShowReceipt] = useState(false);
-      const [edit, setEdit] = useState(false);
-      const disableReceipt = !can("add_receipt");
-      const disableDue = !can("add_due");
-
-      const exportStatement = () => {
-        const rows = [["التاريخ","الوصف/نوع","داخل/خارج","المبلغ","العملة"]];
-        for (const d of dueItems) rows.push([d.dueDate, d.title, "مستحق", d.amount, d.currency]);
-        // (للتبسيط في الديمو: ضفنا المستحقات. يمكن توسيعها لتشمل التحصيلات لهذا العميل)
-        downloadCSV(`كشف_${c.name}.csv`, rows);
-      };
+    // --------- Forms ---------
+    const ClientForm = ({ onSubmit, initial, onCancel }) => {
+      const [name,setName]=useState(initial?.name||"");
+      const [country,setCountry]=useState(initial?.country||countries[0]);
+      const [phone,setPhone]=useState(initial?.phone||"");
+      const [email,setEmail]=useState(initial?.email||"");
+      const [isProspect,setIsProspect]=useState(initial? initial.status!=="current" : true);
+      const [salesOwner,setSalesOwner]=useState(initial?.salesOwner||"");
+      const [importance,setImportance]=useState(initial?.importance||"Medium");
+      const [services,setServices]=useState(initial?.services||[]);
+      const [stage,setStage]=useState(initial?.stage||"New");
 
       return (
-        <div className="card">
-          <div className="flex items-start gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold">{c.name}</h3>
-                <span className="badge gray">{c.country}</span>
-                <span className={"badge "+(c.status==="active"?"green":c.status==="prospect"?"amber":"gray")}>
-                  {c.status==="active"?"نشط":c.status==="prospect"?"محتمل":"منتهي"}
-                </span>
+        <form onSubmit={(e)=>{e.preventDefault();
+            onSubmit({ name, country, phone, email, status: isProspect? "prospect":"current",
+              salesOwner, importance, services, stage
+            });
+          }} className="grid gap-3">
+          <Field label="اسم العميل"><input className="inp" value={name} onChange={e=>setName(e.target.value)} required/></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="الدولة"><select className="inp" value={country} onChange={e=>setCountry(e.target.value)}>{countries.map(cc=><option key={cc}>{cc}</option>)}</select></Field>
+            <Field label="Prospect?"><input type="checkbox" checked={isProspect} onChange={e=>setIsProspect(e.target.checked)} /></Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="هاتف"><input className="inp" value={phone} onChange={e=>setPhone(e.target.value)} /></Field>
+            <Field label="إيميل"><input className="inp" value={email} onChange={e=>setEmail(e.target.value)} /></Field>
+          </div>
+          {isProspect && (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Sales Owner"><input className="inp" value={salesOwner} onChange={e=>setSalesOwner(e.target.value)} /></Field>
+                <Field label="Importance"><select className="inp" value={importance} onChange={e=>setImportance(e.target.value)}>{importanceLabels.map(i=><option key={i}>{i}</option>)}</select></Field>
+                <Field label="Stage"><select className="inp" value={stage} onChange={e=>setStage(e.target.value)}>{stages.map(s=><option key={s}>{s}</option>)}</select></Field>
               </div>
-              <div className="text-sm text-slate-600">{c.email} · {c.phone}</div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <Stat label="إجمالي مستحق" value={fmt(stats.due, stats.currency||"KWD")} subtle />
-              <Stat label="إجمالي مدفوع" value={fmt(stats.paid, stats.currency||"KWD")} />
-              <Stat label="الرصيد" value={fmt(stats.balance, stats.currency||"KWD")} highlight={stats.balance>0} good={stats.balance<=0} />
-            </div>
-          </div>
-          <div className="mt-4 flex items-center gap-2">
-            <button className={"btn "+(disableDue?"disabled":"")} onClick={()=>!disableDue && setShowDue(true)}>+ إضافة مستحق</button>
-            <button className={"btn "+(disableReceipt?"disabled":"")} onClick={()=>!disableReceipt && setShowReceipt(true)}>+ تسجيل تحصيل</button>
-            <button className="btn" onClick={()=>setEdit(true)}>تفاصيل/تعديل العميل</button>
-            <button className="btn" onClick={exportStatement}>تصدير كشف CSV</button>
-          </div>
-          <div className="mt-2 text-sm text-slate-600"><b>عقود:</b> {contracts.length} · <b>مستحقات مفتوحة:</b> {dueItems.filter(d=>d.status!=="paid").length}</div>
-
-          {showDue && (
-            <Modal title="إضافة مستحق" onClose={()=>setShowDue(false)}>
-              <DueForm initial={{ clientId: c.id, currency: stats.currency||"KWD" }} onSubmit={(d)=>{ addDue(d); setShowDue(false); }} />
-            </Modal>
+              <Field label="Services (comma separated)"><input className="inp" value={services.join(", ")} onChange={e=>setServices(e.target.value.split(",").map(s=>s.trim()).filter(Boolean))} /></Field>
+            </>
           )}
-          {showReceipt && (
-            <Modal title="تسجيل تحصيل" onClose={()=>setShowReceipt(false)}>
-              <ReceiptForm initial={{ clientId: c.id, currency: stats.currency||"KWD" }} dueItems={dueItems.filter(d=>d.status!=="paid")} onSubmit={(r)=>{ addReceipt({ ...r, createdBy: user }); setShowReceipt(false); }} />
-            </Modal>
-          )}
-          {edit && (
-            <Modal title={"تفاصيل العميل — "+c.name} onClose={()=>setEdit(false)}>
-              <ClientEdit initial={c} onClose={()=>setEdit(false)} />
-            </Modal>
-          )}
-        </div>
-      );
-    }
-
-    function ClientForm({ onSubmit }){
-      const [name,setName]=useState(""); const [country,setCountry]=useState(countries[0]); const [phone,setPhone]=useState(""); const [email,setEmail]=useState("");
-      return (
-        <form onSubmit={(e)=>{e.preventDefault(); if(!name.trim()) return alert("الاسم مطلوب"); onSubmit({name,country,phone,email});}} className="grid gap-3">
-          <Field label="اسم العميل"><input className="inp" value={name} onChange={e=>setName(e.target.value)} /></Field>
-          <Field label="الدولة"><select className="inp" value={country} onChange={e=>setCountry(e.target.value)}>{countries.map(cc=><option key={cc} value={cc}>{cc}</option>)}</select></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="هاتف"><input className="inp" value={phone} onChange={e=>setPhone(e.target.value)} /></Field>
-            <Field label="إيميل"><input className="inp" value={email} onChange={e=>setEmail(e.target.value)} /></Field>
+          <div className="flex justify-end gap-2">
+            {onCancel && <button type="button" className="btn" onClick={onCancel}>إلغاء</button>}
+            <button type="submit" className="btn-primary">حفظ</button>
           </div>
-          <div className="flex justify-end gap-2"><button type="submit" className="btn-primary">حفظ</button></div>
         </form>
       );
-    }
+    };
 
-    function ClientEdit({ initial, onClose }){
-      const [name,setName]=useState(initial.name); const [country,setCountry]=useState(initial.country); const [phone,setPhone]=useState(initial.phone||""); const [email,setEmail]=useState(initial.email||"");
-      return (
-        <form onSubmit={(e)=>{e.preventDefault(); Object.assign(initial,{name,country,phone,email}); onClose(); }} className="grid gap-3">
-          <Field label="اسم العميل"><input className="inp" value={name} onChange={e=>setName(e.target.value)} /></Field>
-          <Field label="الدولة"><select className="inp" value={country} onChange={e=>setCountry(e.target.value)}>{countries.map(cc=><option key={cc} value={cc}>{cc}</option>)}</select></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="هاتف"><input className="inp" value={phone} onChange={e=>setPhone(e.target.value)} /></Field>
-            <Field label="إيميل"><input className="inp" value={email} onChange={e=>setEmail(e.target.value)} /></Field>
-          </div>
-          <div className="flex justify-end gap-2"><button type="button" className="btn" onClick={onClose}>إغلاق</button><button type="submit" className="btn-primary">حفظ</button></div>
-        </form>
-      );
-    }
-
-    // ---------- Contracts ----------
-    function ContractsPanel({ clients, contracts, addContract, updateContract, can }){
-      const [openAdd,setOpenAdd]=useState(false); const [editing,setEditing]=useState(null);
-      const disabled = !can("edit_contract");
-      return (
-        <section className="pt-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xl font-semibold">العقود</h2>
-            <button className={"btn-primary "+(disabled?"disabled":"")} onClick={()=>!disabled && setOpenAdd(true)}>إضافة عقد</button>
-          </div>
-          <div className="grid gap-3">
-            {contracts.map(ct=>{
-              const cl = clients.find(c=>c.id===ct.clientId);
-              return (
-                <div key={ct.id} className="card">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className={"font-semibold "+(disabled? "":"cursor-pointer")} onClick={()=>!disabled && setEditing(ct)}>{cl?.name} · <span className="text-slate-600">{contractTypes.find(t=>t.value===ct.type)?.label}</span></div>
-                      <div className="text-sm text-slate-600">العملة: {ct.currency} · بداية: {ct.startDate||"—"} · نهاية: {ct.endDate||"—"}</div>
-                      <div className="text-sm text-slate-600">توليد تلقائي: {ct.autoMonthly? "مُفعّل":"غير مُفعّل"} · إصدار: يوم {ct.billingDay||1} · استحقاق: يوم {ct.dueDay||5}</div>
-                    </div>
-                    {ct.type==="monthly" && <div className="text-sm">قيمة شهرية: <b>{fmt(ct.monthlyAmount||0, ct.currency)}</b></div>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {openAdd && (
-            <Modal title="إضافة عقد" onClose={()=>setOpenAdd(false)}>
-              <ContractForm clients={clients} onSubmit={(val)=>{ addContract({ id: uid(), ...val }); setOpenAdd(false); }} />
-            </Modal>
-          )}
-          {editing && (
-            <Modal title="تفاصيل العقد" onClose={()=>setEditing(null)}>
-              <ContractForm clients={clients} initial={editing} onSubmit={(val)=>{ updateContract(editing.id, val); setEditing(null); }} />
-            </Modal>
-          )}
-        </section>
-      );
-    }
-
-    function ContractForm({ clients, onSubmit, initial }){
+    const ContractForm = ({ clients=[], onSubmit, initial, onCancel }) => {
       const [clientId,setClientId]=useState(initial?.clientId || (clients[0]?.id||""));
-      const [type,setType]=useState(initial?.type || "monthly");
-      const [currency,setCurrency]=useState(initial?.currency || "KWD");
-      const [monthlyAmount,setMonthlyAmount]=useState(initial?.monthlyAmount || 600);
-      const [startDate,setStartDate]=useState(initial?.startDate || "");
-      const [endDate,setEndDate]=useState(initial?.endDate || "");
-      const [note,setNote]=useState(initial?.note || "");
+      const [service,setService]=useState(initial?.service||"");
+      const [type,setType]=useState(initial?.type||"monthly");
+      const [currency,setCurrency]=useState(initial?.currency||"KWD");
+      const [monthlyAmount,setMonthlyAmount]=useState(initial?.monthlyAmount||600);
+      const [startDate,setStartDate]=useState(initial?.startDate||"");
+      const [endDate,setEndDate]=useState(initial?.endDate||"");
       const [autoMonthly,setAutoMonthly]=useState(!!initial?.autoMonthly);
-      const [billingDay,setBillingDay]=useState(initial?.billingDay || 1);
-      const [dueDay,setDueDay]=useState(initial?.dueDay || 5);
+      const [billingDay,setBillingDay]=useState(initial?.billingDay||1);
+      const [dueDay,setDueDay]=useState(initial?.dueDay||5);
+      const [milestones,setMilestones]=useState(initial?.milestones||[]);
+      const addMilestone = ()=> setMilestones(p=>[...p, {id:uid(), title:"", amount:0, dueDate:"", status:"open", allocated:0}]);
+      const setM = (i, patch)=> setMilestones(p=>p.map((m,idx)=> idx===i? {...m, ...patch}:m));
+      const delM = (i)=> setMilestones(p=>p.filter((_,idx)=> idx!==i));
+
       return (
-        <form onSubmit={(e)=>{e.preventDefault(); if(!clientId) return alert("اختر عميلًا"); onSubmit({ clientId, type, currency, monthlyAmount: type==='monthly'? Number(monthlyAmount):undefined, startDate, endDate, note, autoMonthly, billingDay:Number(billingDay), dueDay:Number(dueDay) }); }} className="grid gap-3">
-          <Field label="العميل"><select className="inp" value={clientId} onChange={e=>setClientId(e.target.value)}>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+        <form onSubmit={(e)=>{ e.preventDefault();
+            if(!clientId) return alert("اختر عميلًا");
+            const payload={ clientId, service, type, currency, startDate, endDate, autoMonthly,
+              billingDay:Number(billingDay), dueDay:Number(dueDay) };
+            if (type==="monthly") payload.monthlyAmount=Number(monthlyAmount);
+            if (type==="milestone") payload.milestones=milestones;
+            onSubmit(payload);
+          }} className="grid gap-3">
+          {!!clients.length && <Field label="العميل"><select className="inp" value={clientId} onChange={e=>setClientId(e.target.value)}>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>}
+          <Field label="نوع الخدمة"><input className="inp" value={service} onChange={e=>setService(e.target.value)} placeholder="مثال: Social Media, SEO..." /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="نوع العقد"><select className="inp" value={type} onChange={e=>setType(e.target.value)}>{contractTypes.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select></Field>
             <Field label="العملة"><select className="inp" value={currency} onChange={e=>setCurrency(e.target.value)}>{currencies.map(c=><option key={c.code} value={c.code}>{c.code}</option>)}</select></Field>
@@ -423,96 +260,55 @@
             <Field label="تاريخ البداية"><input type="date" className="inp" value={startDate} onChange={e=>setStartDate(e.target.value)} /></Field>
             <Field label="تاريخ النهاية"><input type="date" className="inp" value={endDate} onChange={e=>setEndDate(e.target.value)} /></Field>
           </div>
-          <Field label="ملاحظات"><textarea className="inp" rows="3" value={note} onChange={e=>setNote(e.target.value)} /></Field>
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="توليد تلقائي"><input type="checkbox" checked={autoMonthly} onChange={e=>setAutoMonthly(e.target.checked)} /></Field>
-            <Field label="يوم الإصدار"><input type="number" className="inp" value={billingDay} onChange={e=>setBillingDay(e.target.value)} /></Field>
-            <Field label="يوم الاستحقاق"><input type="number" className="inp" value={dueDay} onChange={e=>setDueDay(e.target.value)} /></Field>
+          {type!=="milestone" && (
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="توليد تلقائي"><input type="checkbox" checked={autoMonthly} onChange={e=>setAutoMonthly(e.target.checked)} /></Field>
+              <Field label="يوم الإصدار"><input type="number" className="inp" value={billingDay} onChange={e=>setBillingDay(e.target.value)} /></Field>
+              <Field label="يوم الاستحقاق"><input type="number" className="inp" value={dueDay} onChange={e=>setDueDay(e.target.value)} /></Field>
+            </div>
+          )}
+          {type==="milestone" && (
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold">دفعات (Milestones)</div>
+                <button type="button" className="btn" onClick={addMilestone}>+ Add milestone</button>
+              </div>
+              {milestones.length===0 && <div className="text-sm text-slate-500">لا توجد دفعات بعد.</div>}
+              {milestones.map((m,i)=>(
+                <div key={m.id} className="grid grid-cols-5 gap-2 items-end">
+                  <Field label="Title"><input className="inp" value={m.title} onChange={e=>setM(i,{title:e.target.value})} /></Field>
+                  <Field label="Due Date"><input type="date" className="inp" value={m.dueDate} onChange={e=>setM(i,{dueDate:e.target.value})} /></Field>
+                  <Field label="Amount"><input type="number" className="inp" value={m.amount} onChange={e=>setM(i,{amount:Number(e.target.value)})} /></Field>
+                  <Field label="Status"><select className="inp" value={m.status} onChange={e=>setM(i,{status:e.target.value})}><option>open</option><option>partial</option><option>paid</option></select></Field>
+                  <button type="button" className="btn" onClick={()=>delM(i)}>حذف</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            {onCancel && <button type="button" className="btn" onClick={onCancel}>إلغاء</button>}
+            <button type="submit" className="btn-primary">حفظ</button>
           </div>
-          <div className="flex justify-end"><button type="submit" className="btn-primary">حفظ</button></div>
         </form>
       );
-    }
+    };
 
-    // ---------- Dues ----------
-    function DuesPanel({ clients, dueItems, addDueItem, markAllocated, autoGenerateThisMonth, can }){
-      const [openAdd,setOpenAdd]=useState(false);
-      const [clientFilter,setClientFilter]=useState("");
-      const [allocFor, setAllocFor] = useState(null);
-      const list = useMemo(()=> clientFilter? dueItems.filter(d=>d.clientId===clientFilter): dueItems, [clientFilter, dueItems]);
-      const canAlloc = can("allocate_due");
-      const canAdd = can("add_due");
-
-      const isOverdue = (d) => d.status!=="paid" && new Date(d.dueDate) < new Date(todayStr());
-      const daysLate = (d) => isOverdue(d)? daysBetween(todayStr(), d.dueDate) * -1 : 0;
-
-      return (
-        <section className="pt-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xl font-semibold">المستحقات</h2>
-            <div className="flex items-center gap-2">
-              <button className="btn" onClick={autoGenerateThisMonth}>توليد مستحقات هذا الشهر</button>
-              <select className="inp" value={clientFilter} onChange={e=>setClientFilter(e.target.value)}>
-                <option value="">كل العملاء</option>
-                {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <button className={"btn-primary "+(canAdd? "":"disabled")} onClick={()=> canAdd && setOpenAdd(true)}>إضافة مستحق</button>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto bg-white border rounded-xl">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50">
-                <tr className="text-left"><Th>العميل</Th><Th>الوصف</Th><Th>الفئة</Th><Th>تاريخ الاستحقاق</Th><Th>متأخر</Th><Th>القيمة</Th><Th>المحجوز/المدفوع</Th><Th>الحالة</Th><Th>إجراءات</Th></tr>
-              </thead>
-              <tbody>
-                {list.map(d=>{
-                  const cl = clients.find(c=>c.id===d.clientId);
-                  const late = daysLate(d);
-                  const rowCls = isOverdue(d)? "bg-rose-50": "";
-                  return (
-                    <tr key={d.id} className={"border-t "+rowCls}>
-                      <Td>{cl?.name}</Td>
-                      <Td>{d.title}</Td>
-                      <Td>{d.category||"—"}</Td>
-                      <Td>{d.dueDate}</Td>
-                      <Td>{late>0? `${late} يوم` : "—"}</Td>
-                      <Td>{fmt(d.amount, d.currency)}</Td>
-                      <Td>{fmt(d.allocated||0, d.currency)}</Td>
-                      <Td>{d.status==="paid"? <span className="badge green">مدفوع</span> : d.status==="partial"? <span className="badge amber">جزئي</span> : <span className="badge gray">مفتوح</span>}</Td>
-                      <Td><button className={"btn-xs "+(canAlloc? "":"disabled")} onClick={()=> canAlloc && setAllocFor(d)}>تخصيص</button></Td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {allocFor && (
-            <Modal title="تخصيص مستحق" onClose={()=>setAllocFor(null)}>
-              <AllocateForm due={allocFor} onSubmit={(val)=>{ markAllocated(allocFor.id, val.amount); setAllocFor(null); }} />
-            </Modal>
-          )}
-
-          {openAdd && (
-            <Modal title="إضافة مستحق" onClose={()=>setOpenAdd(false)}>
-              <DueForm initial={{}} onSubmit={(d)=>{ addDueItem(d); setOpenAdd(false); }} />
-            </Modal>
-          )}
-        </section>
-      );
-    }
-
-    function DueForm({ onSubmit, initial }){
-      const [clientId, setClientId] = useState(initial.clientId || "");
+    const DueForm = ({ clients, onSubmit, initial={} }) => {
+      const [clientId, setClientId] = useState(initial.clientId || (clients[0]?.id || ""));
       const [title, setTitle] = useState(initial.title || "");
       const [dueDate, setDueDate] = useState(initial.dueDate || "");
       const [amount, setAmount] = useState(initial.amount || 0);
-      const [currency, setCurrency] = useState(initial.currency || "KWD");
+      const [currency, setCurrency] = useState(initial.currency || (clients[0] ? defaultCurrency(clients[0].country) : "KWD"));
       const [category, setCategory] = useState(initial.category || "دفع");
       return (
-        <form onSubmit={(e)=>{e.preventDefault(); if(!clientId) return alert("اختر العميل"); if(!title.trim()) return alert("الوصف مطلوب"); onSubmit({ id:uid(), clientId, title, dueDate, amount:Number(amount), currency, category, allocated:0, status:"open" }); }} className="grid gap-3">
-          <Field label="العميل"><ClientSelect value={clientId} onChange={setClientId} /></Field>
+        <form onSubmit={(e)=>{e.preventDefault();
+            if(!clientId) return alert("اختر العميل");
+            if(!title.trim()) return alert("الوصف مطلوب");
+            onSubmit({ id:uid(), clientId, title, dueDate, amount:Number(amount), currency, category, allocated:0, status:"open" });
+          }} className="grid gap-3">
+          <Field label="العميل"><select className="inp" value={clientId} onChange={e=>{ setClientId(e.target.value); const c=clients.find(x=>x.id===e.target.value); if(c) setCurrency(defaultCurrency(c.country)); }}>
+            {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </select></Field>
           <Field label="الوصف"><input className="inp" value={title} onChange={e=>setTitle(e.target.value)} /></Field>
           <Field label="تاريخ الاستحقاق"><input type="date" className="inp" value={dueDate} onChange={e=>setDueDate(e.target.value)} /></Field>
           <Field label="القيمة"><input type="number" className="inp" value={amount} onChange={e=>setAmount(e.target.value)} /></Field>
@@ -521,84 +317,48 @@
           <div className="flex justify-end"><button type="submit" className="btn-primary">حفظ</button></div>
         </form>
       );
-    }
+    };
 
-    function AllocateForm({ due, onSubmit }){
-      const [amount, setAmount] = useState(0);
-      const remaining = Math.max(0, Number(due.amount) - Number(due.allocated||0));
-      return (
-        <form onSubmit={(e)=>{e.preventDefault(); const v=Number(amount); if(v<=0) return alert("قيمة غير صالحة"); if(v>remaining) return alert("أكبر من المتبقي"); onSubmit({ amount:v }); }} className="grid gap-3">
-          <div className="text-sm">المتبقي: <b>{fmt(remaining, due.currency)}</b></div>
-          <Field label="قيمة التخصيص"><input type="number" className="inp" value={amount} onChange={e=>setAmount(e.target.value)} /></Field>
-          <div className="flex justify-end gap-2"><button type="button" className="btn" onClick={()=>onSubmit({amount:0})}>إلغاء</button><button type="submit" className="btn-primary">تأكيد</button></div>
-        </form>
-      );
-    }
-
-    // ---------- Receipts ----------
-    function ReceiptsPanel({ clients, receipts, addReceipt, dueItems, user, can }){
-      const [openAdd,setOpenAdd]=useState(false);
-      const [clientFilter, setClientFilter]=useState("");
-      const list = useMemo(()=> clientFilter? receipts.filter(r=>r.clientId===clientFilter): receipts, [clientFilter, receipts]);
-      const disabled = !can("add_receipt");
-      return (
-        <section className="pt-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xl font-semibold">التحصيل</h2>
-            <div className="flex items-center gap-2">
-              <select className="inp" value={clientFilter} onChange={e=>setClientFilter(e.target.value)}>
-                <option value="">كل العملاء</option>
-                {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <button className={"btn-primary "+(disabled? "disabled":"")} onClick={()=> !disabled && setOpenAdd(true)}>تسجيل تحصيل</button>
-            </div>
-          </div>
-          <div className="overflow-x-auto bg-white border rounded-xl">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50"><tr><Th>العميل</Th><Th>التاريخ</Th><Th>القيمة</Th><Th>الطريقة</Th><Th>مرجع</Th><Th>ملاحظة</Th><Th>مرفق</Th><Th>المستخدم</Th></tr></thead>
-              <tbody>
-                {list.map(r=>{
-                  const cl = clients.find(c=>c.id===r.clientId);
-                  return (<tr key={r.id} className="border-t"><Td>{cl?.name}</Td><Td>{r.receivedAt}</Td><Td>{fmt(r.amount, r.currency)}</Td><Td>{r.method}</Td><Td>{r.reference||"—"}</Td><Td>{r.note||"—"}</Td><Td>{r.attachmentUrl? <a className="link" href={r.attachmentUrl} target="_blank">عرض</a>:"—"}</Td><Td>{r.createdBy||user}</Td></tr>);
-                })}
-              </tbody>
-            </table>
-          </div>
-          {openAdd && (
-            <Modal title="تسجيل تحصيل" onClose={()=>setOpenAdd(false)}>
-              <ReceiptForm initial={{}} dueItems={dueItems.filter(d=>d.status!=="paid")} onSubmit={(val)=>{ addReceipt(val); setOpenAdd(false); }} />
-            </Modal>
-          )}
-        </section>
-      );
-    }
-
-    function ReceiptForm({ onSubmit, initial, dueItems }){
-      const [clientId, setClientId] = useState(initial.clientId || "");
+    const ReceiptForm = ({ clients, dueItems, onSubmit, initial={} }) => {
+      const [clientId, setClientId] = useState(initial.clientId || (clients[0]?.id || ""));
       const [amount, setAmount] = useState(initial.amount || 0);
-      const [currency, setCurrency] = useState(initial.currency || "KWD");
+      const [currency, setCurrency] = useState(initial.currency || (clients[0]? defaultCurrency(clients[0].country):"KWD"));
       const [method, setMethod] = useState(initial.method || payMethods[0]);
       const [reference, setReference] = useState(initial.reference || "");
       const [receivedAt, setReceivedAt] = useState(initial.receivedAt || new Date().toISOString().slice(0,10));
       const [note, setNote] = useState(initial.note || "");
       const [attachmentUrl, setAttachmentUrl] = useState(initial.attachmentUrl || "");
       const [appliedToDueItemId, setAppliedToDueItemId] = useState(initial.appliedToDueItemId || "");
+
       return (
-        <form onSubmit={(e)=>{ e.preventDefault(); if(!clientId) return alert("اختر العميل"); if(Number(amount)<=0) return alert("القيمة غير صالحة"); if(!attachmentUrl) return alert("إثبات الدفع إلزامي"); onSubmit({ clientId, amount:Number(amount), currency, method, reference, receivedAt, note, attachmentUrl, appliedToDueItemId: appliedToDueItemId || null }); }} className="grid gap-3">
-          <Field label="العميل"><ClientSelect value={clientId} onChange={setClientId} /></Field>
+        <form onSubmit={(e)=>{ e.preventDefault();
+            if(!clientId) return alert("اختر العميل");
+            if(Number(amount)<=0) return alert("القيمة غير صالحة");
+            if(!attachmentUrl) return alert("إثبات الدفع إلزامي");
+            onSubmit({
+              clientId, amount:Number(amount), currency, method, reference, receivedAt, note,
+              attachmentUrl, appliedToDueItemId: appliedToDueItemId || null
+            });
+          }} className="grid gap-3">
+          <Field label="العميل"><select className="inp" value={clientId} onChange={e=>{ setClientId(e.target.value); const c=clients.find(x=>x.id===e.target.value); if(c) setCurrency(defaultCurrency(c.country)); }}>
+            {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </select></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="القيمة"><input type="number" className="inp" value={amount} onChange={e=>setAmount(e.target.value)} /></Field>
             <Field label="العملة"><select className="inp" value={currency} onChange={e=>setCurrency(e.target.value)}>{currencies.map(c=><option key={c.code} value={c.code}>{c.code}</option>)}</select></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="طريقة الدفع"><select className="inp" value={method} onChange={e=>setMethod(e.target.value)}>{payMethods.map(m=><option key={m} value={m}>{m}</option>)}</select></Field>
+            <Field label="طريقة الدفع"><select className="inp" value={method} onChange={e=>setMethod(e.target.value)}>{payMethods.map(m=><option key={m}>{m}</option>)}</select></Field>
             <Field label="مرجع"><input className="inp" value={reference} onChange={e=>setReference(e.target.value)} placeholder="رقم تحويل/شيك" /></Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="تاريخ التحصيل"><input type="date" className="inp" value={receivedAt} onChange={e=>setReceivedAt(e.target.value)} /></Field>
             <Field label="ملاحظة"><input className="inp" value={note} onChange={e=>setNote(e.target.value)} placeholder="اختياري" /></Field>
           </div>
-          <Field label="إرفاق الإثبات (صورة/ PDF)"><input type="file" accept="image/*,application/pdf" className="inp" onChange={(e)=>{const f=e.target.files?.[0]; if(f) setAttachmentUrl(URL.createObjectURL(f));}} /></Field>
+          <Field label="مرفق (صورة/PDF)">
+            <input type="file" accept="image/*,application/pdf" className="inp"
+              onChange={(e)=>{const f=e.target.files?.[0]; if(f) setAttachmentUrl(URL.createObjectURL(f));}} />
+          </Field>
           <Field label="تطبيق التحصيل على مستحق معيّن (اختياري)">
             <select className="inp" value={appliedToDueItemId} onChange={e=>setAppliedToDueItemId(e.target.value)}>
               <option value="">— لا يوجد —</option>
@@ -608,83 +368,16 @@
           <div className="flex justify-end"><button type="submit" className="btn-primary">حفظ</button></div>
         </form>
       );
-    }
+    };
 
-    // ---------- Reports ----------
-    function ReportsPanel({ receipts, dueItems, clients, onExportCSV, can }){
-      const [fromDate, setFromDate] = useState("");
-      const [toDate, setToDate] = useState("");
-      const [country, setCountry] = useState("");
-      const [currency, setCurrency] = useState("");
-      const [category, setCategory] = useState("");
-      const [user, setUser] = useState("");
-
-      const inRange = (d) => {
-        if(!fromDate && !toDate) return true;
-        const t = new Date(d).getTime();
-        if(fromDate && t < new Date(fromDate).getTime()) return false;
-        if(toDate && t > new Date(toDate).getTime()) return false;
-        return true;
-      };
-
-      const filteredDues = dueItems.filter(d => inRange(d.dueDate) && (!currency || d.currency===currency) && (!category || d.category===category) && (!country || (clients.find(c=>c.id===d.clientId)?.country===country)));
-      const filteredReceipts = receipts.filter(r => inRange(r.receivedAt) && (!currency || r.currency===currency) && (!user || r.createdBy===user) && (!country || (clients.find(c=>c.id===r.clientId)?.country===country)));
-
-      const totalDue = filteredDues.reduce((s,d)=> s + (Number(d.amount) - Number(d.allocated||0)), 0);
-      const totalPaid = filteredReceipts.reduce((s,r)=> s + Number(r.amount), 0);
-      const balance = totalDue - totalPaid;
-
-      const doExport = () => {
-        if (!can("export")) return;
-        const rows = [["النوع","التاريخ","العميل","الوصف/الطريقة","القيمة","العملة","مستخدم/فئة"]];
-        for (const d of filteredDues){
-          const cl = clients.find(c=>c.id===d.clientId);
-          rows.push(["مستحق", d.dueDate, cl?.name||"", d.title, d.amount, d.currency, d.category||""]);
-        }
-        for (const r of filteredReceipts){
-          const cl = clients.find(c=>c.id===r.clientId);
-          rows.push(["تحصيل", r.receivedAt, cl?.name||"", r.method, r.amount, r.currency, r.createdBy||""]);
-        }
-        onExportCSV("qm_reports.csv", rows);
-      };
-
-      return (
-        <section className="pt-6">
-          <h2 className="text-xl font-semibold mb-3">التقارير</h2>
-          <div className="grid md:grid-cols-5 gap-2 mb-4">
-            <Field label="من"><input type="date" className="inp" value={fromDate} onChange={e=>setFromDate(e.target.value)} /></Field>
-            <Field label="إلى"><input type="date" className="inp" value={toDate} onChange={e=>setToDate(e.target.value)} /></Field>
-            <Field label="الدولة"><select className="inp" value={country} onChange={e=>setCountry(e.target.value)}><option value="">الكل</option>{countries.map(c=><option key={c} value={c}>{c}</option>)}</select></Field>
-            <Field label="العملة"><select className="inp" value={currency} onChange={e=>setCurrency(e.target.value)}><option value="">الكل</option>{currencies.map(c=><option key={c.code} value={c.code}>{c.code}</option>)}</select></Field>
-            <Field label="تصنيف/مستخدم"><input className="inp" placeholder="تصنيف (للمستحق) أو مستخدم (للتحصيل)" value={user||category} onChange={e=>{ setUser(e.target.value); setCategory(e.target.value); }} /></Field>
-          </div>
-          <div className="flex items-center gap-2 mb-4">
-            <button className="btn" onClick={()=>{setFromDate(""); setToDate(""); setCountry(""); setCurrency(""); setCategory(""); setUser("");}}>الكل</button>
-            <button className={"btn-primary "+(can("export")? "":"disabled")} onClick={doExport}>تصدير CSV</button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
-            <Stat label="إجمالي مستحق" value={fmt(totalDue, currency||"KWD")} subtle/>
-            <Stat label="إجمالي مدفوع" value={fmt(totalPaid, currency|| "KWD")}/>
-            <Stat label="الرصيد الإجمالي" value={fmt(balance, currency||"KWD")} highlight={balance>0} good={balance<=0}/>
-          </div>
-        </section>
-      );
-    }
-
-    // ---------- Select ----------
-    function ClientSelect({ value, onChange }){
-      const [opts] = useState(seedClients);
-      return (
-        <select className="inp" value={value} onChange={e=>onChange(e.target.value)}>
-          <option value="">— اختر عميل —</option>
-          {opts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-      );
-    }
-
-    // Mount
-    const root = ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<App/>);
-  </script>
-</body>
-</html>
+    // --------- Views ---------
+    const ContractView = ({ ct, editable, onEdit }) => {
+      const [edit,setEdit]=useState(false);
+      if (!edit) {
+        return (
+          <div className="grid gap-2">
+            <RowView label="Service" value={ct.service||"—"} />
+            <RowView label="Type" value={ct.type} />
+            <RowView label="Currency" value={ct.currency} />
+            {ct.type==="monthly" && <RowView label="Monthly Amount" value={ct.monthlyAmount} />}
+            <RowView label="Start"
