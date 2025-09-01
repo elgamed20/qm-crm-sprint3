@@ -8,12 +8,12 @@
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- React -->
+  <!-- React UMD + Babel -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- PDF -->
+  <!-- jsPDF -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 
@@ -39,9 +39,9 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useMemo, useEffect } = React;
+    const { useState, useMemo } = React;
 
-    // --------- Constants / Utils ---------
+    // ---------- Constants & Utils ----------
     const currencies = [
       { code: "KWD", label: "Kuwaiti Dinar" },
       { code: "EGP", label: "Egyptian Pound" },
@@ -67,7 +67,7 @@
       catch { return Number(n).toFixed(2)+" "+code; }
     };
 
-    // --------- Seed Data ---------
+    // ---------- Seed ----------
     const seedClients = [
       { id: uid(), name: "Al Noor Clinic", country: "الكويت", phone: "22093334", email: "info@alnoor.kw", status: "current" },
       { id: uid(), name: "Delta Foods", country: "مصر", phone: "+2010000000", email: "ops@delta.eg",
@@ -84,7 +84,7 @@
     ];
     const seedReceipts = [];
 
-    // --------- PDF Helpers ---------
+    // ---------- PDF helper ----------
     const exportClientPDF = (client, contracts, dues, receipts, logo=null) => {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({orientation:"p", unit:"pt", format:"a4"});
@@ -137,7 +137,7 @@
       doc.save(`${client.name}-statement.pdf`);
     };
 
-    // --------- Small UI helpers ---------
+    // ---------- Small UI ----------
     const Field = ({label,children}) => (
       <label className="grid gap-1 text-sm">
         <span className="text-slate-700 font-medium">{label}</span>
@@ -174,12 +174,12 @@
       <div className="overflow-x-auto bg-white border rounded-xl">
         <table className="w-full text-sm">
           <thead className="bg-slate-50"><tr>{head.map((h,i)=><Th key={i}>{h}</Th>)}</tr></thead>
-        <tbody>{rows.map((r,i)=>(<tr key={i} className="border-t">{r.map((c,j)=><Td key={j}>{c}</Td>)}</tr>))}</tbody>
+          <tbody>{rows.map((r,i)=>(<tr key={i} className="border-t">{r.map((c,j)=><Td key={j}>{c}</Td>)}</tr>))}</tbody>
         </table>
       </div>
     );
 
-    // --------- Forms ---------
+    // ---------- Forms ----------
     const ClientForm = ({ onSubmit, initial, onCancel }) => {
       const [name,setName]=useState(initial?.name||"");
       const [country,setCountry]=useState(initial?.country||countries[0]);
@@ -370,7 +370,7 @@
       );
     };
 
-    // --------- Views ---------
+    // ---------- Views ----------
     const ContractView = ({ ct, editable, onEdit }) => {
       const [edit,setEdit]=useState(false);
       if (!edit) {
@@ -380,4 +380,482 @@
             <RowView label="Type" value={ct.type} />
             <RowView label="Currency" value={ct.currency} />
             {ct.type==="monthly" && <RowView label="Monthly Amount" value={ct.monthlyAmount} />}
-            <RowView label="Start"
+            <RowView label="Start" value={ct.startDate||"—"} />
+            <RowView label="End" value={ct.endDate||"—"} />
+            {ct.type==="milestone" && (
+              <div className="mt-2">
+                <div className="font-semibold mb-1">Milestones</div>
+                <ListTable head={["Title","Due","Amount","Status"]} rows={(ct.milestones||[]).map(m=>[m.title, m.dueDate, m.amount, m.status||"open"])} />
+              </div>
+            )}
+            {editable && <div className="flex justify-end"><button className="btn" onClick={()=>setEdit(true)}>Edit</button></div>}
+          </div>
+        );
+      }
+      return <ContractForm initial={ct} onSubmit={(val)=>{ onEdit && onEdit(val); setEdit(false); }} onCancel={()=>setEdit(false)} />;
+    };
+
+    const ProspectTimeline = ({ c, updateClient })=>{
+      const [comment, setComment] = useState("");
+      const [follow, setFollow] = useState(c.nextFollowUp||"");
+      const addComment = ()=>{
+        const t = c.timeline? [...c.timeline]:[];
+        t.unshift({ id:uid(), at:new Date().toISOString(), text:comment });
+        updateClient({ timeline:t });
+        setComment("");
+      };
+      const saveFollow = ()=> updateClient({ nextFollowUp: follow });
+      return (
+        <div className="grid gap-3">
+          <Field label="إضافة تعليق"><textarea className="inp" rows="3" value={comment} onChange={e=>setComment(e.target.value)} /></Field>
+          <div className="flex justify-end"><button className="btn" onClick={addComment} disabled={!comment.trim()}>إضافة تعليق</button></div>
+          <Field label="المتابعة القادمة"><input type="datetime-local" className="inp" value={follow} onChange={e=>setFollow(e.target.value)} /></Field>
+          <div className="flex justify-end"><button className="btn" onClick={saveFollow}>حفظ المتابعة</button></div>
+          <div className="grid gap-2">{(c.timeline||[]).map(t=>(<div key={t.id} className="border rounded p-2 text-sm"><b>{new Date(t.at).toLocaleString()}</b><br/>{t.text}</div>))}</div>
+        </div>
+      );
+    };
+
+    const ClientView = ({ c, contracts, dueItems, receipts, onClose, updateClient })=>{
+      const [edit,setEdit]=useState(false);
+      const [tab,setTab]=useState(c.status==="current"?"contracts":"timeline");
+      const onPatch = (patch)=> updateClient(patch); // parent passes a wrapper
+
+      return (
+        <Modal title={"تفاصيل العميل — "+c.name} onClose={onClose}>
+          {!edit ? (
+            <div className="grid gap-3">
+              <RowView label="الدولة" value={c.country} />
+              <RowView label="هاتف" value={c.phone} />
+              <RowView label="إيميل" value={c.email} />
+              {c.status!=="current" && (
+                <>
+                  <RowView label="Sales Owner" value={c.salesOwner||"—"} />
+                  <RowView label="Importance" value={c.importance||"—"} />
+                  <RowView label="Services" value={(c.services||[]).join(", ")||"—"} />
+                  <RowView label="Stage" value={c.stage||"—"} />
+                  <RowView label="Next Follow-up" value={c.nextFollowUp||"—"} />
+                </>
+              )}
+              <div className="flex items-center gap-2 mt-2">
+                <button className="btn" onClick={()=>setEdit(true)}>تعديل</button>
+              </div>
+              <div className="mt-2">
+                <div className="tabs mb-3">
+                  {c.status==="current" && <button className={tab==="contracts"?"active":""} onClick={()=>setTab("contracts")}>العقود</button>}
+                  {c.status==="current" && <button className={tab==="dues"?"active":""} onClick={()=>setTab("dues")}>المستحقات</button>}
+                  {c.status==="current" && <button className={tab==="receipts"?"active":""} onClick={()=>setTab("receipts")}>التحصيل</button>}
+                  <button className={tab==="timeline"?"active":""} onClick={()=>setTab("timeline")}>الملاحظات والمتابعة</button>
+                </div>
+                {tab==="contracts" && <div className="grid gap-2">{contracts.map(ct=> <ContractView key={ct.id} ct={ct} />)}</div>}
+                {tab==="dues" && <ListTable rows={dueItems.map(d=>[d.title,d.dueDate,fmt(d.amount,d.currency),d.status])} head={["الوصف","تاريخ","المبلغ","الحالة"]} />}
+                {tab==="receipts" && <ListTable rows={receipts.map(r=>[r.receivedAt,r.method,fmt(r.amount,r.currency), r.createdBy])} head={["تاريخ","طريقة","المبلغ","المستخدم"]} />}
+                {tab==="timeline" && <ProspectTimeline c={c} updateClient={onPatch} />}
+              </div>
+            </div>
+          ):(
+            <ClientForm initial={c} onSubmit={(val)=>{ onPatch(val); setEdit(false); }} onCancel={()=>setEdit(false)} />
+          )}
+        </Modal>
+      );
+    };
+
+    // ---------- Panels ----------
+    const ClientsPanel = ({ clients, allClients, setClients, statsByClient, addClient, updateClient, clientTab, setClientTab, contracts, addContract, dueItems, addDue, receipts, exportClient })=>{
+      const [openAdd,setOpenAdd]=useState(false);
+      return (
+        <section className="pt-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xl font-semibold">العملاء</h2>
+            <div className="flex items-center gap-2">
+              <div className="tabs">
+                <button className={clientTab==="current"?"active":""} onClick={()=>setClientTab("current")}>عملاء حاليين</button>
+                <button className={clientTab==="prospects"?"active":""} onClick={()=>setClientTab("prospects")}>عملاء محتملين</button>
+                <button className={clientTab==="all"?"active":""} onClick={()=>setClientTab("all")}>كل العملاء</button>
+              </div>
+              <button className="btn-primary" onClick={()=>setOpenAdd(true)}>إضافة عميل</button>
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            {clients.map(c => (
+              <ClientCard
+                key={c.id}
+                c={c}
+                stats={statsByClient[c.id]||{}}
+                contracts={contracts.filter(ct=>ct.clientId===c.id)}
+                dueItems={dueItems.filter(d=>d.clientId===c.id)}
+                receipts={receipts.filter(r=>r.clientId===c.id)}
+                onExport={()=>exportClient(c.id)}
+                onAddDue={(d)=>addDue({...d, clientId:c.id, currency: defaultCurrency(c.country)})}
+                onAddContract={(ct)=>addContract({...ct, clientId:c.id, currency: defaultCurrency(c.country)})}
+                updateClient={(patch)=>updateClient(c.id, patch)}
+              />
+            ))}
+          </div>
+
+          {openAdd && (
+            <Modal title="إضافة عميل" onClose={()=>setOpenAdd(false)}>
+              <ClientForm onSubmit={(val)=>{ addClient({ id:uid(), status: (val.status||"prospect"), ...val }); setOpenAdd(false); }} />
+            </Modal>
+          )}
+        </section>
+      );
+    };
+
+    const ClientCard = ({ c, stats, contracts, dueItems, receipts, onExport, onAddDue, onAddContract, updateClient })=>{
+      const [showView, setShowView]=useState(false);
+      const [showAddDue, setShowAddDue]=useState(false);
+      const [showAddContract, setShowAddContract]=useState(false);
+      return (
+        <div className="card">
+          <div className="flex items-start gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold">{c.name}</h3>
+                <span className="badge gray">{c.country}</span>
+                <span className={"badge "+(c.status==="current"?"green":c.status==="prospect"?"amber":"gray")}>{c.status==="current"?"حالي":"محتمل"}</span>
+              </div>
+              <div className="text-sm text-slate-600">{c.email} · {c.phone}</div>
+            </div>
+            {c.status==="current" && (
+              <div className="grid grid-cols-3 gap-3">
+                <Stat label="إجمالي مستحق" value={fmt(stats.due || 0, stats.currency||defaultCurrency(c.country))} subtle />
+                <Stat label="إجمالي مدفوع" value={fmt(stats.paid || 0, stats.currency||defaultCurrency(c.country))} />
+                <Stat label="الرصيد" value={fmt(stats.balance || 0, stats.currency||defaultCurrency(c.country))} highlight={(stats.balance||0)>0} good={(stats.balance||0)<=0} />
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 flex items-center gap-2">
+            <button className="btn" onClick={()=>setShowView(true)}>عرض التفاصيل</button>
+            {c.status==="current" && <>
+              <button className="btn" onClick={()=>setShowAddDue(true)}>+ إضافة مستحق</button>
+              <button className="btn" onClick={()=>setShowAddContract(true)}>+ عقد جديد</button>
+              <button className="btn" onClick={onExport}>تصدير كشف PDF</button>
+            </>}
+          </div>
+
+          {showView && (
+            <ClientView
+              c={c}
+              contracts={contracts}
+              dueItems={dueItems}
+              receipts={receipts}
+              onClose={()=>setShowView(false)}
+              updateClient={(patch)=>updateClient(patch)}
+            />
+          )}
+
+          {showAddDue && (
+            <Modal title="إضافة مستحق" onClose={()=>setShowAddDue(false)}>
+              <DueForm clients={[c]} onSubmit={(d)=>{ onAddDue(d); setShowAddDue(false); }} />
+            </Modal>
+          )}
+
+          {showAddContract && (
+            <Modal title="إضافة عقد" onClose={()=>setShowAddContract(false)}>
+              <ContractForm onSubmit={(ct)=>{ onAddContract(ct); setShowAddContract(false); }} clients={[c]} />
+            </Modal>
+          )}
+        </div>
+      );
+    };
+
+    const ContractsPanel = ({ clients, contracts, addContract, updateContract })=>{
+      const [openAdd,setOpenAdd]=useState(false);
+      const [view,setView]=useState(null);
+      return (
+        <section className="pt-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xl font-semibold">العقود</h2>
+            <button className="btn-primary" onClick={()=>setOpenAdd(true)}>إضافة عقد</button>
+          </div>
+          <div className="grid gap-3">
+            {contracts.map(ct=>{
+              const cl = clients.find(c=>c.id===ct.clientId);
+              return (
+                <div key={ct.id} className="card">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold">{cl?.name} · <span className="text-slate-600">{ct.service||"—"}</span></div>
+                      <div className="text-sm text-slate-600">{ct.type} · {ct.currency} · {ct.startDate||"—"} → {ct.endDate||"—"}</div>
+                    </div>
+                    <button className="btn" onClick={()=>setView(ct)}>View</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {openAdd && <Modal title="إضافة عقد" onClose={()=>setOpenAdd(false)}><ContractForm clients={clients} onSubmit={(val)=>{ addContract(val); setOpenAdd(false); }} /></Modal>}
+          {view && <Modal title="عرض العقد" onClose={()=>setView(null)}><ContractView ct={view} editable onEdit={(patch)=>{ updateContract(view.id, patch); setView(null); }} /></Modal>}
+        </section>
+      );
+    };
+
+    const DuesPanel = ({ clients, dueItems, addDueItem, alloc })=>{
+      const [openAdd,setOpenAdd]=useState(false);
+      const [clientFilter,setClientFilter]=useState("");
+      const list = useMemo(()=> clientFilter? dueItems.filter(d=>d.clientId===clientFilter): dueItems, [clientFilter, dueItems]);
+      const isOverdue = (d) => d.status!=="paid" && d.dueDate && new Date(d.dueDate) < new Date();
+      return (
+        <section className="pt-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xl font-semibold">المستحقات</h2>
+            <div className="flex items-center gap-2">
+              <select className="inp" value={clientFilter} onChange={e=>setClientFilter(e.target.value)}>
+                <option value="">كل العملاء</option>
+                {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <button className="btn-primary" onClick={()=>setOpenAdd(true)}>إضافة مستحق</button>
+            </div>
+          </div>
+          <div className="overflow-x-auto bg-white border rounded-xl">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50"><tr className="text-left"><Th>العميل</Th><Th>الوصف</Th><Th>الفئة</Th><Th>تاريخ</Th><Th>القيمة</Th><Th>محجوز</Th><Th>الحالة</Th><Th>إجراءات</Th></tr></thead>
+              <tbody>
+                {list.map(d=>{
+                  const cl = clients.find(c=>c.id===d.clientId);
+                  return (
+                    <tr key={d.id} className={"border-t "+(isOverdue(d)?"bg-rose-50":"")}>
+                      <Td>{cl?.name}</Td><Td>{d.title}</Td><Td>{d.category}</Td><Td>{d.dueDate||"—"}</Td><Td>{fmt(d.amount,d.currency)}</Td><Td>{fmt(d.allocated||0,d.currency)}</Td>
+                      <Td>{d.status}</Td>
+                      <Td><button className="btn-xs" onClick={()=>{ const v=prompt("قيمة التخصيص","0"); if(!v) return; alloc(d.id, Number(v)); }}>تخصيص</button></Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {openAdd && <Modal title="إضافة مستحق" onClose={()=>setOpenAdd(false)}><DueForm clients={clients} onSubmit={(d)=>{ addDueItem(d); setOpenAdd(false); }} /></Modal>}
+        </section>
+      );
+    };
+
+    const ReceiptsPanel = ({ clients, receipts, addReceipt, dueItems })=>{
+      const [openAdd,setOpenAdd]=useState(false);
+      const [clientFilter, setClientFilter]=useState("");
+      const list = useMemo(()=> clientFilter? receipts.filter(r=>r.clientId===clientFilter): receipts, [clientFilter, receipts]);
+      return (
+        <section className="pt-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xl font-semibold">التحصيل</h2>
+            <div className="flex items-center gap-2">
+              <select className="inp" value={clientFilter} onChange={e=>setClientFilter(e.target.value)}>
+                <option value="">كل العملاء</option>
+                {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <button className="btn-primary" onClick={()=>setOpenAdd(true)}>تسجيل تحصيل</button>
+            </div>
+          </div>
+          <div className="overflow-x-auto bg-white border rounded-xl">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50"><tr><Th>العميل</Th><Th>التاريخ</Th><Th>القيمة</Th><Th>الطريقة</Th><Th>مرجع</Th><Th>ملاحظة</Th><Th>مرفق</Th><Th>المستخدم</Th></tr></thead>
+              <tbody>
+                {list.map(r=>{
+                  const cl = clients.find(c=>c.id===r.clientId);
+                  return (<tr key={r.id} className="border-t"><Td>{cl?.name}</Td><Td>{r.receivedAt}</Td><Td>{fmt(r.amount, r.currency)}</Td><Td>{r.method}</Td><Td>{r.reference||"—"}</Td><Td>{r.note||"—"}</Td><Td>{r.attachmentUrl? <a className="underline" href={r.attachmentUrl} target="_blank">عرض</a>:"—"}</Td><Td>{r.createdBy}</Td></tr>);
+                })}
+              </tbody>
+            </table>
+          </div>
+          {openAdd && <Modal title="تسجيل تحصيل" onClose={()=>setOpenAdd(false)}><ReceiptForm clients={clients} dueItems={dueItems} onSubmit={(val)=>{ addReceipt(val); setOpenAdd(false); }} /></Modal>}
+        </section>
+      );
+    };
+
+    const ReportsPanel = ({ clients, dueItems, receipts, exportPDF })=>{
+      const [fromDate, setFromDate] = useState("");
+      const [toDate, setToDate] = useState("");
+      const [country, setCountry] = useState("");
+      const [currency, setCurrency] = useState("");
+      const [category, setCategory] = useState("");
+      const [user, setUser] = useState("");
+
+      const inRange = (d) => {
+        if(!d) return true;
+        const t = new Date(d).getTime();
+        if(fromDate && t < new Date(fromDate).getTime()) return false;
+        if(toDate && t > new Date(toDate).getTime()) return false;
+        return true;
+      };
+
+      const filteredDues = dueItems.filter(d => inRange(d.dueDate) && (!currency || d.currency===currency) && (!category || d.category===category) && (!country || (clients.find(c=>c.id===d.clientId)?.country===country)));
+      const filteredReceipts = receipts.filter(r => inRange(r.receivedAt) && (!currency || r.currency===currency) && (!user || r.createdBy===user) && (!country || (clients.find(c=>c.id===r.clientId)?.country===country)));
+
+      const totalDue = filteredDues.reduce((s,d)=> s + (Number(d.amount) - Number(d.allocated||0)), 0);
+      const totalPaid = filteredReceipts.reduce((s,r)=> s + Number(r.amount), 0);
+      const balance = totalDue - totalPaid;
+
+      const rows = [
+        ["Type","Date","Client","Desc/Method","Amount","Currency","User/Category"],
+        ...filteredDues.map(d=>["Due", d.dueDate||"", (clients.find(c=>c.id===d.clientId)||{}).name||"", d.title, d.amount, d.currency, d.category]),
+        ...filteredReceipts.map(r=>["Receipt", r.receivedAt||"", (clients.find(c=>c.id===r.clientId)||{}).name||"", r.method, r.amount, r.currency, r.createdBy])
+      ];
+
+      return (
+        <section className="pt-6">
+          <h2 className="text-xl font-semibold mb-3">التقارير</h2>
+          <div className="grid md:grid-cols-5 gap-2 mb-4">
+            <Field label="من"><input type="date" className="inp" value={fromDate} onChange={e=>setFromDate(e.target.value)} /></Field>
+            <Field label="إلى"><input type="date" className="inp" value={toDate} onChange={e=>setToDate(e.target.value)} /></Field>
+            <Field label="الدولة"><select className="inp" value={country} onChange={e=>setCountry(e.target.value)}><option value="">الكل</option>{countries.map(c=><option key={c} value={c}>{c}</option>)}</select></Field>
+            <Field label="العملة"><select className="inp" value={currency} onChange={e=>setCurrency(e.target.value)}><option value="">الكل</option>{currencies.map(c=><option key={c.code} value={c.code}>{c.code}</option>)}</select></Field>
+            <Field label="تصنيف/مستخدم"><input className="inp" placeholder="تصنيف (Due) أو مستخدم (Receipt)" value={user||category} onChange={e=>{ setUser(e.target.value); setCategory(e.target.value); }} /></Field>
+          </div>
+          <div className="flex items-center gap-2 mb-4">
+            <button className="btn" onClick={()=>{setFromDate(""); setToDate(""); setCountry(""); setCurrency(""); setCategory(""); setUser("");}}>الكل</button>
+            <button className="btn-primary" onClick={()=>exportPDF(rows,"Reports")}>تصدير PDF</button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+            <Stat label="إجمالي مستحق" value={fmt(totalDue, currency||"KWD")} subtle/>
+            <Stat label="إجمالي مدفوع" value={fmt(totalPaid, currency||"KWD")}/>
+            <Stat label="الرصيد الإجمالي" value={fmt(balance, currency||"KWD")} highlight={balance>0} good={balance<=0}/>
+          </div>
+        </section>
+      );
+    };
+
+    // ---------- App ----------
+    function App(){
+      const [tab, setTab] = useState("clients");
+      const [clients, setClients] = useState(seedClients);
+      const [contracts, setContracts] = useState(seedContracts);
+      const [dueItems, setDueItems] = useState(seedDue);
+      const [receipts, setReceipts] = useState(seedReceipts);
+      const [clientTab, setClientTab] = useState("current");
+      const [logoDataUrl, setLogoDataUrl] = useState(null);
+      const [search, setSearch] = useState("");
+      const currentUser = "Yasser";
+
+      const statsByClient = useMemo(()=>{
+        const out={};
+        for (const c of clients) out[c.id] = { due:0, paid:0, balance:0, currency:defaultCurrency(c.country) };
+        for (const d of dueItems){ const o=out[d.clientId]; if(!o) continue; o.due += Number(d.amount)-Number(d.allocated||0); o.currency = d.currency || o.currency; }
+        for (const r of receipts){ const o=out[r.clientId]; if(!o) continue; o.paid += Number(r.amount); o.currency = r.currency || o.currency; }
+        for (const id in out) out[id].balance = out[id].due - out[id].paid;
+        return out;
+      },[clients,dueItems,receipts]);
+
+      const filteredClients = useMemo(()=>{
+        const t = search.trim().toLowerCase();
+        let list = clients.filter(c => clientTab==="all" ? true : (clientTab==="current" ? c.status==="current" : c.status!=="current"));
+        if (!t) return list;
+        return list.filter(c => [c.name,c.email,c.phone,c.country].join(" ").toLowerCase().includes(t));
+      }, [clients, clientTab, search]);
+
+      const addClient = (obj)=> setClients(p=>[...p, {id:uid(), ...obj}]);
+      const updateClient = (id, patch)=> setClients(p=>p.map(c=> c.id===id? {...c, ...patch}:c));
+
+      const addContract = (ct)=>{
+        const n = { id:uid(), createdAt: new Date().toISOString(), ...ct };
+        setContracts(p=>[n, ...p]);
+        // convert prospect to current automatically
+        updateClient(ct.clientId, { status:"current" });
+      };
+      const updateContract = (id, patch)=> setContracts(p=>p.map(c=> c.id===id? {...c, ...patch}:c));
+
+      const addDue = (d)=> setDueItems(p=>[{...d, id:uid()}, ...p]);
+      const alloc = (dueId, amount)=> setDueItems(p=>p.map(d=> d.id===dueId ? {...d, allocated: Math.min(Number(d.amount), Number(d.allocated||0)+Number(amount)), status: (Number(d.allocated||0)+Number(amount))>=Number(d.amount)?'paid':'partial'} : d));
+
+      const addReceipt = (r)=>{
+        const rec = { id:uid(), ...r, createdBy: currentUser };
+        if (rec.appliedToDueItemId) alloc(rec.appliedToDueItemId, rec.amount);
+        setReceipts(p=>[rec, ...p]);
+      };
+
+      const sortedContracts = useMemo(()=> [...contracts].sort((a,b)=> (b.createdAt||"") > (a.createdAt||"") ? 1 : -1 ), [contracts]);
+
+      return (
+        <div className="min-h-screen">
+          <header className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-slate-200">
+            <div className="mx-auto max-w-7xl px-4 py-3 flex items-center gap-3">
+              <div className="font-semibold text-slate-900 text-lg">QM Vendor/Client CRM — Sprint 4</div>
+              <nav className="flex items-center gap-1 ml-2">
+                {["clients","contracts","dues","receipts","reports"].map(id => (
+                  <button key={id} onClick={()=>setTab(id)} className={"px-3 py-1.5 rounded-full text-sm border " + (tab===id? "bg-slate-900 text-white border-slate-900":"bg-white text-slate-700 border-slate-300")}>
+                    {({clients:"العملاء",contracts:"العقود",dues:"المستحقات",receipts:"التحصيل",reports:"التقارير"})[id]}
+                  </button>
+                ))}
+              </nav>
+              <div className="ml-auto flex items-center gap-2">
+                <input type="file" accept="image/*" className="hidden" id="logoUp" onChange={(e)=>{const f=e.target.files?.[0]; if(!f) return; const reader=new FileReader(); reader.onload=()=>setLogoDataUrl(reader.result); reader.readAsDataURL(f);}}/>
+                <label className="btn" htmlFor="logoUp">Upload Logo</label>
+                <input className="inp w-64" placeholder="...بحث في العملاء" value={search} onChange={e=>setSearch(e.target.value)} />
+              </div>
+            </div>
+          </header>
+
+          <main className="mx-auto max-w-7xl px-4 pb-24">
+            {tab==="clients" && (
+              <ClientsPanel
+                clients={filteredClients}
+                allClients={clients}
+                setClients={setClients}
+                statsByClient={statsByClient}
+                addClient={addClient}
+                updateClient={(id,patch)=>updateClient(id,patch)}
+                clientTab={clientTab}
+                setClientTab={setClientTab}
+                contracts={sortedContracts}
+                addContract={addContract}
+                dueItems={dueItems}
+                addDue={addDue}
+                receipts={receipts}
+                exportClient={(clientId)=>{
+                  const c = clients.find(x=>x.id===clientId);
+                  exportClientPDF(c, sortedContracts.filter(ct=>ct.clientId===clientId), dueItems.filter(d=>d.clientId===clientId), receipts.filter(r=>r.clientId===clientId), logoDataUrl);
+                }}
+              />
+            )}
+            {tab==="contracts" && (
+              <ContractsPanel
+                clients={clients}
+                contracts={sortedContracts}
+                addContract={addContract}
+                updateContract={updateContract}
+              />
+            )}
+            {tab==="dues" && (
+              <DuesPanel
+                clients={clients}
+                dueItems={dueItems}
+                addDueItem={addDue}
+                alloc={alloc}
+              />
+            )}
+            {tab==="receipts" && (
+              <ReceiptsPanel
+                clients={clients}
+                receipts={receipts}
+                addReceipt={addReceipt}
+                dueItems={dueItems}
+              />
+            )}
+            {tab==="reports" && (
+              <ReportsPanel
+                clients={clients}
+                dueItems={dueItems}
+                receipts={receipts}
+                exportPDF={(rows,title)=>{
+                  const { jsPDF } = window.jspdf;
+                  const doc = new jsPDF({orientation:"p", unit:"pt", format:"a4"});
+                  if (logoDataUrl) doc.addImage(logoDataUrl, "PNG", 40, 28, 90, 40);
+                  doc.setFontSize(16); doc.text(title||"Reports", 140, 50);
+                  doc.autoTable({ startY:80, head:[rows[0]], body: rows.slice(1) });
+                  doc.save("qm_reports.pdf");
+                }}
+              />
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    // ---------- Render ----------
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
